@@ -9,7 +9,8 @@ from chainer import Variable, optimizers
 class NIN:
     def __init__(self, fn="nin_imagenet.caffemodel", alpha=[0,0,1,1], beta=[1,1,1,1]):
         print "load model... %s"%fn
-        self.model = caffe.CaffeFunction(fn)
+        func = caffe.CaffeFunction(fn)
+        self.model = func
         self.alpha = alpha
         self.beta = beta
     def forward(self, x):
@@ -25,7 +26,8 @@ class NIN:
 class VGG:
     def __init__(self, fn="VGG_ILSVRC_16_layers.caffemodel", alpha=[0,0,1,1], beta=[1,1,1,1]):
         print "load model... %s"%fn
-        self.model = caffe.CaffeFunction(fn)
+        func = caffe.CaffeFunction(fn)
+        self.model = func
         self.alpha = alpha
         self.beta = beta
     def forward(self, x):
@@ -36,18 +38,50 @@ class VGG:
         y3 = self.model.conv3_3(F.relu(self.model.conv3_2(F.relu(self.model.conv3_1(x2)))))
         x3 = F.average_pooling_2d(F.relu(y3), 2, stride=2)
         y4 = self.model.conv4_3(F.relu(self.model.conv4_2(F.relu(self.model.conv4_1(x3)))))
-    #    x4 = F.average_pooling_2d(F.relu(y4), 2, stride=2)
-    #    y5 = model.conv5_3(F.relu(model.conv5_2(F.relu(model.conv5_1(x4)))))
+        #x4 = F.average_pooling_2d(F.relu(y4), 2, stride=2)
+        #y5 = self.model.conv5_3(F.relu(self.model.conv5_2(F.relu(self.model.conv5_1(x4)))))
         return [y1,y2,y3,y4]
+
+    # def _forward(self, x):
+    #     y1 = self.model.conv1_2(F.relu(self.model.conv1_1(x)))
+    #     x1 = F.max_pooling_2d(F.relu(y1), 2, stride=2)
+    #     y2 = self.model.conv2_2(F.relu(self.model.conv2_1(x1)))
+    #     x2 = F.max_pooling_2d(F.relu(y2), 2, stride=2)
+    #     y3 = self.model.conv3_3(F.relu(self.model.conv3_2(F.relu(self.model.conv3_1(x2)))))
+    #     x3 = F.max_pooling_2d(F.relu(y3), 2, stride=2)
+    #     y4 = self.model.conv4_3(F.relu(self.model.conv4_2(F.relu(self.model.conv4_1(x3)))))
+    #     x4 = F.max_pooling_2d(F.relu(y4), 2, stride=2)
+    #     y5 = self.model.conv5_3(F.relu(self.model.conv5_2(F.relu(self.model.conv5_1(x4)))))
+    #     return [y1,y2,y3,y4,y5]
+
+    def predict(self, x):
+        y1 = self.model.conv1_2(F.relu(self.model.conv1_1(x)))
+        x1 = F.max_pooling_2d(F.relu(y1), 2, stride=2)
+        y2 = self.model.conv2_2(F.relu(self.model.conv2_1(x1)))
+        x2 = F.max_pooling_2d(F.relu(y2), 2, stride=2)
+        y3 = self.model.conv3_3(F.relu(self.model.conv3_2(F.relu(self.model.conv3_1(x2)))))
+        x3 = F.max_pooling_2d(F.relu(y3), 2, stride=2)
+        y4 = self.model.conv4_3(F.relu(self.model.conv4_2(F.relu(self.model.conv4_1(x3)))))
+        x4 = F.max_pooling_2d(F.relu(y4), 2, stride=2)
+        y5 = self.model.conv5_3(F.relu(self.model.conv5_2(F.relu(self.model.conv5_1(x4)))))
+
+        x5 = F.max_pooling_2d(F.relu(y5), 2, stride=2)
+        y6 = F.relu(self.model.fc6(x5))
+        y7 = F.relu(self.model.fc7(y6))
+        y8 = self.model.fc8(y7)
+        return y8
+        
+        
 
 class I2V:
     def __init__(self, fn="illust2vec_tag_ver200.caffemodel", alpha=[0,0,0,1,10,100], beta=[0.1,1,1,10,100,1000]):
         print "load model... %s"%fn
-        self.model = caffe.CaffeFunction(fn)
+        func = caffe.CaffeFunction(fn)
+        self.model = func
         self.alpha = alpha
         self.beta = beta
-#        self.pool_func = F.max_pooling_2d
-        self.pool_func = F.average_pooling_2d
+        self.pool_func = F.max_pooling_2d
+#        self.pool_func = F.average_pooling_2d
 
     def forward(self, x):
         y1 = self.model.conv1_1(x)
@@ -64,10 +98,27 @@ class I2V:
         #x6 = F.average_pooling_2d((y6), y6.data.shape[2], stride=1)
         return [y1,y2,y3,y4,y5,y6]
 
+    def predict(self, x):
+        y1 = self.model.conv1_1(x)
+        x1 = self.pool_func(F.relu(y1), 2, stride=2)
+        y2 = self.model.conv2_1(x1)
+        x2 = self.pool_func(F.relu(y2), 2, stride=2)
+        y3 = self.model.conv3_2(F.relu(self.model.conv3_1(x2)))
+        x3 = self.pool_func(F.relu(y3), 2, stride=2)
+        y4 = self.model.conv4_2(F.relu(self.model.conv4_1(x3)))
+        x4 = self.pool_func(F.relu(y4), 2, stride=2)
+        y5 = self.model.conv5_2(F.relu(self.model.conv5_1(x4)))
+        x5 = self.pool_func(F.relu(y5), 2, stride=2)
+        y6 = self.model.conv6_4(F.relu(F.dropout(self.model.conv6_3(F.relu(self.model.conv6_2(F.relu(self.model.conv6_1(x5))))),train=False)))
+        x6 = F.average_pooling_2d((y6), 7, stride=1)
+        y = F.reshape(x6, (x6.data.shape[0], x6.data.shape[1]))
+        return y
+
 class GoogLeNet:
     def __init__(self, fn="bvlc_googlenet.caffemodel", alpha=[0,0,0,0,1,10], beta=[0.00005, 5, 50, 50, 5000, 500000]):
         print "load model... %s"%fn
-        self.model = caffe.CaffeFunction(fn)
+        func = caffe.CaffeFunction(fn)
+        self.model = func
         self.alpha = alpha
         self.beta = beta
 #        self.pool_func = F.max_pooling_2d

@@ -1,22 +1,17 @@
-
 import argparse
 import os
 import sys
-
 import numpy as np
 from PIL import Image
-
 import chainer
 from chainer import cuda
 import chainer.functions as F
 import chainer.links
 from chainer.functions import caffe
 from chainer import Variable, optimizers
-
 from models import *
-
 import pickle
-
+import chainer_gogh_lib
 
 def subtract_mean(x0):
     x = x0.copy()
@@ -31,33 +26,9 @@ def add_mean(x0):
     x[0,2,:,:] += 120
     return x
 
-
-def image_resize(img_file, width):
-    gogh = Image.open(img_file)
-    orig_w, orig_h = gogh.size[0], gogh.size[1]
-    if orig_w>orig_h:
-        new_w = width
-        new_h = width*orig_h/orig_w
-        gogh = np.asarray(gogh.resize((new_w,new_h)))[:,:,:3].transpose(2, 0, 1)[::-1].astype(np.float32)
-        gogh = gogh.reshape((1,3,new_h,new_w))
-        print("image resized to: ", gogh.shape)
-        hoge= np.zeros((1,3,width,width), dtype=np.float32)
-        hoge[0,:,width-new_h:,:] = gogh[0,:,:,:]
-        gogh = subtract_mean(hoge)
-    else:
-        new_w = width*orig_w/orig_h
-        new_h = width
-        gogh = np.asarray(gogh.resize((new_w,new_h)))[:,:,:3].transpose(2, 0, 1)[::-1].astype(np.float32)
-        gogh = gogh.reshape((1,3,new_h,new_w))
-        print("image resized to: ", gogh.shape)
-        hoge= np.zeros((1,3,width,width), dtype=np.float32)
-        hoge[0,:,:,width-new_w:] = gogh[0,:,:,:]
-        gogh = subtract_mean(hoge)
-    return xp.asarray(gogh), new_w, new_h
-
-def save_image(img, width, new_w, new_h, it):
+def save_image(img, it):
     def to_img(x):
-        im = np.zeros((new_h,new_w,3))
+        im = np.zeros((x.shape[1], x.shape[2], 3))
         im[:,:,0] = x[2,:,:]
         im[:,:,1] = x[1,:,:]
         im[:,:,2] = x[0,:,:]
@@ -70,12 +41,9 @@ def save_image(img, width, new_w, new_h, it):
         img_cpu = add_mean(img.get())
     else:
         img_cpu = add_mean(img)
-    if width==new_w:
-        to_img(img_cpu[0,:,width-new_h:,:])
-    else:
-        to_img(img_cpu[0,:,:,width-new_w:])
 
 
+    to_img(img_cpu[0])
 
 def get_matrix(y):
     ch = y.data.shape[1]
@@ -83,8 +51,6 @@ def get_matrix(y):
     gogh_y = F.reshape(y, (ch,wd**2))
     gogh_matrix = F.matmul(gogh_y, gogh_y, transb=True)/np.float32(ch*wd**2)
     return gogh_matrix
-
-
 
 class Clip(chainer.Function):
     def forward(self, x):
@@ -113,7 +79,7 @@ def generate_image(img_orig, img_style, width, nw, nh, max_iter, lr, img_gen=Non
 
         x = img_gen.W
         y = nn.forward(x)
-
+        
         L = Variable(xp.zeros((), dtype=np.float32))
         for l in range(len(y)):
             ch = y[l].data.shape[1]
@@ -141,17 +107,13 @@ def generate_image(img_orig, img_style, width, nw, nh, max_iter, lr, img_gen=Non
             img_gen.W.data += np.vectorize(clip)(img_gen.W.data).reshape(tmp_shape) - img_gen.W.data
 
         if i%50==0:
-            save_image(img_gen.W.data, W, nw, nh, i)
+            save_image(img_gen.W.data, i)
 
-
-parser = argparse.ArgumentParser(
-    description='A Neural Algorithm of Artistic Style')
+parser = argparse.ArgumentParser(description='A Neural Algorithm of Artistic Style')
 parser.add_argument('--model', '-m', default='nin',
                     help='model file (nin, vgg, i2v, googlenet)')
-parser.add_argument('--orig_img', '-i', default='orig.png',
-                    help='Original image')
-parser.add_argument('--style_img', '-s', default='style.png',
-                    help='Style image')
+parser.add_argument('orig_img', help='Original image')
+parser.add_argument('style_img', help='Style image')
 parser.add_argument('--out_dir', '-o', default='output',
                     help='Output directory')
 parser.add_argument('--gpu', '-g', default=-1, type=int,
@@ -179,21 +141,12 @@ if args.gpu >= 0:
 else:
     xp = np
 
-if 'nin' in args.model:
-    nn = NIN()
-elif 'vgg' in args.model:
-    nn = VGG()
-elif 'i2v' in args.model:
-    nn = I2V()
-elif 'googlenet' in args.model:
-    nn = GoogLeNet()
-else:
-    print 'invalid model name. you can use (nin, vgg, i2v, googlenet)'
+nn = chainer_gogh_lib.load_nn(args.model)
 if args.gpu>=0:
 	nn.model.to_gpu()
 
 W = args.width
-img_content,nw,nh = image_resize(args.orig_img, W)
-img_style,_,_ = image_resize(args.style_img, W)
+img_content,nw,nh = chainer_gogh_lib.image_crop(args.orig_img, W, xp)
+img_style,_,_ = chainer_gogh_lib.image_crop(args.style_img, W, xp)
 
 generate_image(img_content, img_style, W, nw, nh, img_gen=None, max_iter=args.iter, lr=args.lr)
